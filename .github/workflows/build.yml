@@ -1,7 +1,11 @@
 name: build
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -10,8 +14,22 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - run: dotnet publish VidShow.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out
+      - name: Build
+        run: dotnet build VidShow.csproj -c Release -o out
       - uses: actions/upload-artifact@v4
         with:
-          name: VidShow-win-x64
+          name: VidShow
           path: out/VidShow.exe
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/VidShow.exe
+          generate_release_notes: true
+          body: |
+            ## Vid-show
+            Двухэкранный видеоплеер: пульт на вашем экране, на проекторе — только видео.
+
+            **Установка не нужна** — скачайте `VidShow.exe` и запустите.
+            Работает на Windows 7 SP1 / 8 / 10 / 11 (нужен .NET Framework 4.8 — он уже встроен в Windows 10 1903+ и Windows 11).
+            Если на слабом ПК/в виртуалке видео тормозит: `VidShow.exe --software`.

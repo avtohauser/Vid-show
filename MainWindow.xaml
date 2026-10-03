@@ -1,50 +1,159 @@
 <Window x:Class="VidShow.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Vid-show — пульт" Width="900" Height="620" MinWidth="560" MinHeight="420"
-        Background="#1e1e1e" Foreground="White" AllowDrop="True"
-        Drop="Window_Drop" KeyDown="Window_KeyDown" Closed="Window_Closed">
-    <Grid Margin="10">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        Title="Vid-show" Width="1040" Height="660" MinWidth="780" MinHeight="540"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI, Segoe UI Symbol" AllowDrop="True" UseLayoutRounding="True"
+        WindowStartupLocation="CenterScreen"
+        Drop="Window_Drop" PreviewKeyDown="Window_PreviewKeyDown"
+        SourceInitialized="Window_SourceInitialized" Closed="Window_Closed">
+    <Window.Resources>
+        <DataTemplate x:Key="ItemTpl">
+            <DockPanel>
+                <TextBlock x:Name="Ico" Text="•" Width="20" DockPanel.Dock="Left" VerticalAlignment="Center"
+                           Foreground="{StaticResource MutedBrush}"/>
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </DockPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                    <Setter TargetName="Ico" Property="Text" Value="▶"/>
+                    <Setter TargetName="Ico" Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
 
-        <DockPanel Grid.Row="0" Margin="0,0,0,8">
-            <Button Content="Открыть видео…" Padding="12,4" Click="Open_Click" DockPanel.Dock="Left"/>
-            <TextBlock x:Name="FileName" Margin="10,0,0,0" VerticalAlignment="Center"
-                       Text="Файл не выбран (можно перетащить сюда)" TextTrimming="CharacterEllipsis"/>
-        </DockPanel>
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="290"/>
+        </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="1" Background="Black" BorderBrush="#444" BorderThickness="1">
-            <Rectangle x:Name="PreviewRect"/>
-        </Border>
+        <!-- ЛЕВАЯ ЧАСТЬ: пульт -->
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <Grid Grid.Row="2" Margin="0,8,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Name="CurTime" Text="00:00" VerticalAlignment="Center" Width="60"/>
-            <Slider x:Name="Timeline" Grid.Column="1" Minimum="0" Maximum="1" IsMoveToPointEnabled="True"
-                    VerticalAlignment="Center" ValueChanged="Timeline_ValueChanged"/>
-            <TextBlock x:Name="TotTime" Grid.Column="2" Text="00:00" VerticalAlignment="Center"
-                       Width="60" TextAlignment="Right"/>
+            <!-- Шапка -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                <Border DockPanel.Dock="Right" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="10,4">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="{StaticResource MutedBrush}" Margin="0,1,7,0"/>
+                        <TextBlock x:Name="StatusText" Text="Проектор выключен" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="FileName" Text="Vid-show" FontSize="17" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0"/>
+            </DockPanel>
+
+            <!-- Превью -->
+            <Border Grid.Row="1" Background="Black" CornerRadius="12" BorderBrush="{StaticResource BorderBrush2}"
+                    BorderThickness="1" ClipToBounds="True">
+                <Grid>
+                    <Rectangle x:Name="PreviewRect"/>
+                    <StackPanel x:Name="Hint" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="🎬" FontSize="44" HorizontalAlignment="Center" Opacity="0.7"/>
+                        <TextBlock x:Name="HintText" Text="Перетащите видео сюда" FontSize="16" HorizontalAlignment="Center"
+                                   TextAlignment="Center" Margin="0,8,0,2"/>
+                        <TextBlock x:Name="HintSub" Text="или нажмите «＋ Добавить» справа" FontSize="12.5" HorizontalAlignment="Center"
+                                   Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                    <Border x:Name="BlackBadge" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="10" Background="#CC000000" BorderBrush="#FF5C7A" BorderThickness="1"
+                            CornerRadius="6" Padding="8,3">
+                        <TextBlock Text="⬛ ПРОЕКТОР ЧЁРНЫЙ" FontSize="11" FontWeight="SemiBold" Foreground="#FF8DA1"/>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Таймлайн -->
+            <Grid Grid.Row="2" Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="58"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="58"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="CurTime" Text="00:00" VerticalAlignment="Center" FontFamily="Consolas" FontSize="13"/>
+                <Slider x:Name="Timeline" Grid.Column="1" Minimum="0" Maximum="1" IsMoveToPointEnabled="True"
+                        VerticalAlignment="Center" ValueChanged="Timeline_ValueChanged"/>
+                <TextBlock x:Name="RemTime" Grid.Column="2" Text="−00:00" VerticalAlignment="Center" TextAlignment="Right"
+                           FontFamily="Consolas" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
+            </Grid>
+
+            <!-- Управление -->
+            <Grid Grid.Row="3" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ToggleButton x:Name="LoopChk" Style="{StaticResource Chip}" Content="🔁 Повтор" Margin="0,0,6,0"
+                                  Click="Loop_Click" ToolTip="Повторять текущее видео (L)"/>
+                    <Button x:Name="SpeedBtn" Content="1×" Padding="11,6" FontSize="12.5" MinWidth="46"
+                            Click="Speed_Click" ToolTip="Скорость воспроизведения"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Style="{StaticResource GhostButton}" Content="⏮" Click="Prev_Click" ToolTip="Предыдущее (P)"/>
+                    <Button x:Name="PlayBtn" Style="{StaticResource RoundButton}" Content="▶" Margin="4,0"
+                            Click="PlayPause_Click" ToolTip="Старт / пауза (Пробел)"/>
+                    <Button Style="{StaticResource GhostButton}" Content="⏭" Click="Next_Click" ToolTip="Следующее (N)"/>
+                    <Button Style="{StaticResource GhostButton}" Content="■" Click="Stop_Click" ToolTip="Стоп (S)"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <ToggleButton x:Name="PreviewChk" Style="{StaticResource Chip}" Content="👁 Превью" IsChecked="True" Margin="0,0,6,0"
+                                  Click="PreviewChk_Click" ToolTip="Выключите превью, если компьютер слабый"/>
+                    <ToggleButton x:Name="MuteChk" Style="{StaticResource Chip}" Content="🔇" Margin="0,0,8,0"
+                                  Click="Mute_Click" ToolTip="Без звука (M)"/>
+                    <Slider x:Name="VolSlider" Width="92" Minimum="0" Maximum="1" Value="0.8"
+                            IsMoveToPointEnabled="True" ValueChanged="Vol_ValueChanged" ToolTip="Громкость"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Проектор -->
+            <Border Grid.Row="4" Margin="0,14,0,0" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="12">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <ToggleButton x:Name="BlackChk" Style="{StaticResource Chip}" Content="⬛ Чёрный экран" Margin="0,0,8,0"
+                                      Padding="12,8" Click="Black_Click" ToolTip="Мгновенно погасить проектор, видео идёт дальше (B)"/>
+                        <Button x:Name="ProjBtn" Style="{StaticResource AccentButton}" Content="Показать на проекторе"
+                                Click="Proj_Click" ToolTip="Включить / выключить вывод на проектор (F)"/>
+                    </StackPanel>
+                    <TextBlock Text="ПРОЕКТОР" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center" Margin="2,0,10,0"/>
+                    <Button x:Name="ScreenBtn" Content="Экран 2" HorizontalAlignment="Left" Click="Screen_Click"
+                            ToolTip="Нажмите, чтобы выбрать другой монитор"/>
+                </DockPanel>
+            </Border>
         </Grid>
 
-        <WrapPanel Grid.Row="3" Margin="0,8,0,0">
-            <Button x:Name="PlayBtn" Content="▶ Старт" Width="90" Padding="0,6" Margin="0,0,6,0" Click="PlayPause_Click"/>
-            <Button Content="■ Стоп" Width="70" Padding="0,6" Margin="0,0,16,0" Click="Stop_Click"/>
-            <CheckBox x:Name="LoopChk" Content="Повтор" VerticalAlignment="Center" Foreground="White" Margin="0,0,16,0"/>
-            <TextBlock Text="Громкость" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <Slider x:Name="VolSlider" Width="90" Minimum="0" Maximum="1" Value="1" VerticalAlignment="Center"
-                    ValueChanged="Vol_ValueChanged" Margin="0,0,16,0"/>
-            <TextBlock Text="Проектор:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <ComboBox x:Name="ScreenBox" Width="190" Margin="0,0,6,0" SelectionChanged="ScreenBox_SelectionChanged"/>
-            <Button x:Name="ProjBtn" Content="Показать на проекторе" Padding="12,6" Click="Proj_Click"/>
-        </WrapPanel>
+        <!-- ПРАВАЯ ЧАСТЬ: плейлист -->
+        <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <DockPanel Margin="0,0,0,10">
+                    <Button DockPanel.Dock="Right" Content="Очистить" Padding="10,5" FontSize="12" Click="Clear_Click"/>
+                    <Button DockPanel.Dock="Right" Content="＋ Добавить" Padding="10,5" FontSize="12" Margin="0,0,6,0"
+                            Style="{StaticResource AccentButton}" Click="Add_Click"/>
+                    <TextBlock Text="ПЛЕЙЛИСТ" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center"/>
+                </DockPanel>
+                <ListBox x:Name="PlayList" Grid.Row="1" ItemTemplate="{StaticResource ItemTpl}"
+                         MouseDoubleClick="PlayList_DoubleClick"/>
+                <TextBlock Grid.Row="2" Margin="0,10,0,0" FontSize="11" LineHeight="17" TextWrapping="Wrap"
+                           Foreground="{StaticResource MutedBrush}"
+                           Text="Пробел — пуск/пауза · B — чёрный экран · F — проектор · M — звук · L — повтор · ←/→ — ±5 с (Shift — ±30 с) · N/P — следующее/предыдущее · Del — убрать из списка · Esc — скрыть проектор"/>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

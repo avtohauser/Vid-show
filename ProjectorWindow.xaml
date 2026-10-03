@@ -1,7 +1,7 @@
 <Window x:Class="VidShow.ProjectorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Vid-show — проектор" WindowStyle="None" ResizeMode="NoResize"
-        Background="Black" Cursor="None" ShowInTaskbar="False" Topmost="True">
+        Title="Vid-show — проектор" Background="Black" ShowInTaskbar="False"
+        KeyDown="Window_KeyDown">
     <Rectangle x:Name="VideoRect"/>
 </Window>
