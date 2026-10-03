@@ -263,7 +263,9 @@ namespace VidShow
         private ProjectorWindow _proj;
         private Slot _act, _fadeFrom;
         private double _fadeDur;
-        private bool _playing, _setting, _ready;
+        private readonly Filmstrip _film = new Filmstrip();
+        private readonly Image[] _tiles = new Image[Filmstrip.Count];
+        private bool _playing, _ready;
         private int _speedIdx = 2;
         private int _screenIdx;
 
@@ -279,6 +281,13 @@ namespace VidShow
             System.Windows.Media.RenderOptions.SetBitmapScalingMode(PrevA, BitmapScalingMode.LowQuality);
             System.Windows.Media.RenderOptions.SetBitmapScalingMode(PrevB, BitmapScalingMode.LowQuality);
             PlayList.ItemsSource = _items;
+            Tiles.Columns = Filmstrip.Count;
+            for (int i = 0; i < _tiles.Length; i++)
+            {
+                _tiles[i] = new Image { Stretch = Stretch.UniformToFill, SnapsToDevicePixels = true };
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(_tiles[i], BitmapScalingMode.LowQuality);
+                Tiles.Children.Add(_tiles[i]);
+            }
 
             foreach (var slot in _slots)
             {
@@ -663,13 +672,32 @@ namespace VidShow
 
         private void UpdateTimeUi()
         {
-            var a = _act;
-            _setting = true;
-            Timeline.Maximum = a != null && a.Timed ? a.Total : 1;
-            Timeline.Value = 0;
-            Timeline.IsEnabled = a != null && a.Timed;
-            _setting = false;
             UpdateTime();
+            LoadFilm();
+        }
+
+        // Раскадровка таймлайна: для видео — кадры по ходу ролика, для картинки — она сама.
+        private void LoadFilm()
+        {
+            var a = _act;
+            if (a?.Item == null) { ClearFilm(); return; }
+            if (a.IsImage)
+            {
+                _film.Cancel();
+                var src = a.ImageBrush.ImageSource;
+                foreach (var t in _tiles) t.Source = src;
+                return;
+            }
+            if (!Settings.Preview || !a.Ready || a.Total <= 0) { if (_film.Path != a.Item.Path) ClearFilm(); return; }
+            if (_film.Path == a.Item.Path) return;
+            foreach (var t in _tiles) t.Source = null;
+            _film.Start(a.Item.Path, a.Total, (i, bmp) => { if (i < _tiles.Length) _tiles[i].Source = bmp; });
+        }
+
+        private void ClearFilm()
+        {
+            _film.Cancel();
+            foreach (var t in _tiles) t.Source = null;
         }
 
         private void UpdateTime()
@@ -681,35 +709,68 @@ namespace VidShow
             {
                 CurTime.Text = Fmt(p);
                 RemTime.Text = "−" + Fmt(Math.Max(0, a.Total - p));
-                if (!Timeline.IsMouseCaptureWithin)
-                {
-                    _setting = true;
-                    Timeline.Value = Math.Min(p, Timeline.Maximum);
-                    _setting = false;
-                }
+                SetHead(p / a.Total);
             }
             else
             {
                 CurTime.Text = a.IsImage ? Fmt(p) : "00:00";
                 RemTime.Text = a.IsImage ? "∞" : "";
+                SetHead(-1);
             }
+        }
+
+        private void SetHead(double frac)
+        {
+            if (frac < 0)
+            {
+                FilmHead.Visibility = Visibility.Collapsed;
+                FilmDim.Width = 0;
+                return;
+            }
+            frac = Math.Min(1, frac);
+            double w = FilmArea.ActualWidth;
+            FilmHead.Visibility = Visibility.Visible;
+            FilmHead.Margin = new Thickness(Math.Max(0, Math.Min(w - 3, frac * w - 1.5)), 0, 0, 0);
+            FilmDim.Width = Math.Max(0, (1 - frac) * w);
         }
 
         private void ResetTimeUi()
         {
-            _setting = true;
-            Timeline.Value = 0;
-            Timeline.IsEnabled = true;
-            _setting = false;
+            ClearFilm();
+            SetHead(-1);
             CurTime.Text = "00:00";
             RemTime.Text = "−00:00";
         }
 
-        private void Timeline_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        private void Film_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            if (_setting || _act == null || !_act.Timed) return;
-            Seek(Timeline.Value);
+            Film.Clip = new RectangleGeometry(new Rect(0, 0, Film.ActualWidth, Film.ActualHeight), 8, 8);
+            UpdateTime();
         }
+
+        private double FilmFrac(MouseEventArgs e) =>
+            Math.Max(0, Math.Min(1, e.GetPosition(FilmArea).X / Math.Max(1, FilmArea.ActualWidth)));
+
+        private void Film_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (_act == null || !_act.Timed) return;
+            Film.CaptureMouse();
+            Seek(FilmFrac(e) * _act.Total);
+        }
+
+        private void Film_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_act == null || !_act.Timed) { HoverTip.Visibility = Visibility.Collapsed; return; }
+            double f = FilmFrac(e);
+            HoverText.Text = Fmt(f * _act.Total);
+            HoverTip.Visibility = Visibility.Visible;
+            double x = f * FilmArea.ActualWidth - 20;
+            HoverTip.Margin = new Thickness(Math.Max(0, Math.Min(FilmArea.ActualWidth - 50, x)), 4, 0, 0);
+            if (Film.IsMouseCaptured) Seek(f * _act.Total);
+        }
+
+        private void Film_MouseUp(object sender, MouseButtonEventArgs e) => Film.ReleaseMouseCapture();
+        private void Film_MouseLeave(object sender, MouseEventArgs e) => HoverTip.Visibility = Visibility.Collapsed;
 
         private void Speed_Click(object sender, RoutedEventArgs e)
         {
@@ -762,6 +823,7 @@ namespace VidShow
         {
             Settings.Preview = PreviewChk.IsChecked == true;
             RefreshLayers();
+            LoadFilm();
         }
 
         private void Black_Click(object sender, RoutedEventArgs e)

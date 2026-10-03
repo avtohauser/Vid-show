@@ -79,13 +79,26 @@
             <!-- Таймлайн -->
             <Grid Grid.Row="2" Margin="0,12,0,0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="58"/>
+                    <ColumnDefinition Width="54"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="58"/>
+                    <ColumnDefinition Width="54"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="CurTime" Text="00:00" VerticalAlignment="Center" FontFamily="Consolas" FontSize="13"/>
-                <Slider x:Name="Timeline" Grid.Column="1" Minimum="0" Maximum="1" IsMoveToPointEnabled="True"
-                        VerticalAlignment="Center" ValueChanged="Timeline_ValueChanged"/>
+                <Border x:Name="Film" Grid.Column="1" Height="58" CornerRadius="8" Background="#161922"
+                        BorderBrush="{StaticResource BorderBrush2}" BorderThickness="1" Cursor="Hand" Margin="4,0"
+                        SizeChanged="Film_SizeChanged" MouseLeftButtonDown="Film_MouseDown" MouseMove="Film_MouseMove"
+                        MouseLeftButtonUp="Film_MouseUp" MouseLeave="Film_MouseLeave">
+                    <Grid x:Name="FilmArea" Background="Transparent">
+                        <UniformGrid x:Name="Tiles" Rows="1" IsHitTestVisible="False"/>
+                        <Rectangle x:Name="FilmDim" Fill="#A6000000" HorizontalAlignment="Right" Width="0" IsHitTestVisible="False"/>
+                        <Rectangle x:Name="FilmHead" Width="3" Fill="White" HorizontalAlignment="Left" IsHitTestVisible="False"
+                                   RadiusX="1.5" RadiusY="1.5" Visibility="Collapsed"/>
+                        <Border x:Name="HoverTip" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Margin="0,4,0,0" Background="#E6000000" CornerRadius="4" Padding="6,1" IsHitTestVisible="False">
+                            <TextBlock x:Name="HoverText" FontFamily="Consolas" FontSize="11.5"/>
+                        </Border>
+                    </Grid>
+                </Border>
                 <TextBlock x:Name="RemTime" Grid.Column="2" Text="−00:00" VerticalAlignment="Center" TextAlignment="Right"
                            FontFamily="Consolas" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
             </Grid>
