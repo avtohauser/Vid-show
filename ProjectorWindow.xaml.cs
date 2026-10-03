@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -13,11 +14,21 @@ namespace VidShow
     {
         private bool _allowClose;
 
-        public ProjectorWindow(DrawingBrush brush)
+        public ProjectorWindow()
         {
             InitializeComponent();
-            VideoRect.Fill = brush;
         }
+
+        // Два слоя (A/B): пока один играет, второй готов и проявляется поверх него.
+        public void SetLayer(int index, Brush brush, double opacity, int z)
+        {
+            var r = index == 0 ? RectA : RectB;
+            r.Fill = brush;
+            r.Opacity = opacity;
+            Panel.SetZIndex(r, z);
+        }
+
+        public void SetOpacity(int index, double opacity) => (index == 0 ? RectA : RectB).Opacity = opacity;
 
         public void ShowFullscreen(System.Drawing.Rectangle bounds, double dpiScale)
         {
@@ -54,8 +65,8 @@ namespace VidShow
         public void SetBlackout(bool on, bool animate = true)
         {
             double to = on ? 0 : 1;
-            if (!animate) { VideoRect.BeginAnimation(OpacityProperty, null); VideoRect.Opacity = to; return; }
-            VideoRect.BeginAnimation(OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(350)));
+            if (!animate) { Stage.BeginAnimation(OpacityProperty, null); Stage.Opacity = to; return; }
+            Stage.BeginAnimation(OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(350)));
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
