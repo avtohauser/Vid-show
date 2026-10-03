@@ -10,7 +10,7 @@ namespace VidShow
         {
             // Для совсем слабых машин / проблемных драйверов: VidShow.exe --software
             if (e.Args.Any(a => a.Equals("--software", StringComparison.OrdinalIgnoreCase)))
-                System.Windows.Interop.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+                System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
             base.OnStartup(e);
         }
     }
