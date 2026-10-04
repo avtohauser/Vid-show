@@ -23,9 +23,14 @@ namespace VidShow
         private static readonly HashSet<string> ImgExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff" };
 
+        private static readonly HashSet<string> AudioExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { ".mp3", ".wav", ".wma", ".m4a", ".aac", ".flac", ".ogg", ".opus" };
+
         private bool _playing, _hold;
         public string Path { get; set; }
         public string Name => System.IO.Path.GetFileName(Path);
+        public bool IsAudio => AudioExt.Contains(System.IO.Path.GetExtension(Path ?? ""));
+        public static bool IsAudioPath(string p) => AudioExt.Contains(System.IO.Path.GetExtension(p ?? ""));
         public bool IsImage => ImgExt.Contains(System.IO.Path.GetExtension(Path ?? ""));
 
         // Картинка ожидания: висит, пока оператор сам не включит следующее.
@@ -159,11 +164,16 @@ namespace VidShow
         public static bool Preview = true;
         public static int FadeIdx = 2;
         public static int ImgIdx = 1;
+        public static double MusicVol = 0.7;
+        public static int MusicLoop = 1;      // 0 — один раз, 1 — список по кругу, 2 — один трек по кругу
+        public static bool MusicShuffle;
+        public static bool Duck = true;
 
         private static string Dir => System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VidShow");
         private static string FilePath => System.IO.Path.Combine(Dir, "settings.txt");
         private static string QueuePath => System.IO.Path.Combine(Dir, "queue.txt");
+        private static string MusicPath => System.IO.Path.Combine(Dir, "music.txt");
 
         public static void Load()
         {
@@ -183,15 +193,21 @@ namespace VidShow
                         case "preview": Preview = v != "0"; break;
                         case "fade": int.TryParse(v, out FadeIdx); break;
                         case "img": int.TryParse(v, out ImgIdx); break;
+                        case "mvol": double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out MusicVol); break;
+                        case "mloop": int.TryParse(v, out MusicLoop); break;
+                        case "mshuffle": MusicShuffle = v == "1"; break;
+                        case "duck": Duck = v != "0"; break;
                     }
                 }
             }
             catch { /* первый запуск или файл недоступен — значения по умолчанию */ }
             FadeIdx = Math.Max(0, Math.Min(FadeIdx, FadeOpts.Length - 1));
             ImgIdx = Math.Max(0, Math.Min(ImgIdx, ImgOpts.Length - 1));
+            MusicVol = Math.Max(0, Math.Min(1, MusicVol));
+            MusicLoop = Math.Max(0, Math.Min(2, MusicLoop));
         }
 
-        public static void Save(IEnumerable<PlayItem> queue)
+        public static void Save(IEnumerable<PlayItem> queue, IEnumerable<PlayItem> music)
         {
             try
             {
@@ -205,18 +221,26 @@ namespace VidShow
                     "preview=" + (Preview ? 1 : 0),
                     "fade=" + FadeIdx,
                     "img=" + ImgIdx,
+                    "mvol=" + MusicVol.ToString("0.00", CultureInfo.InvariantCulture),
+                    "mloop=" + MusicLoop,
+                    "mshuffle=" + (MusicShuffle ? 1 : 0),
+                    "duck=" + (Duck ? 1 : 0),
                 });
+                File.WriteAllLines(MusicPath, music.Select(i => "T|" + i.Path));
                 File.WriteAllLines(QueuePath, queue.Select(i => (i.Hold ? "H|" : "T|") + i.Path));
             }
             catch { }
         }
 
-        public static List<PlayItem> LoadQueue()
+        public static List<PlayItem> LoadQueue() => LoadList(QueuePath);
+        public static List<PlayItem> LoadMusic() => LoadList(MusicPath);
+
+        private static List<PlayItem> LoadList(string file)
         {
             var res = new List<PlayItem>();
             try
             {
-                foreach (var line in File.ReadAllLines(QueuePath))
+                foreach (var line in File.ReadAllLines(file))
                     if (line.Length > 2 && line[1] == '|') res.Add(PlayItem.Create(line.Substring(2), line[0] == 'H'));
             }
             catch { }
@@ -313,6 +337,10 @@ namespace VidShow
 
             // «Открыть с помощью» / перетаскивание файла на exe; иначе — очередь с прошлого раза
             var files = Environment.GetCommandLineArgs().Skip(1).Where(File.Exists).ToArray();
+            InitMusic();
+            var cmdAudio = files.Where(PlayItem.IsAudioPath).ToArray();
+            files = files.Where(f => !PlayItem.IsAudioPath(f)).ToArray();
+            if (cmdAudio.Length > 0) AddMusic(cmdAudio);
             if (files.Length > 0) AddFiles(files, true);
             else
             {
@@ -369,8 +397,12 @@ namespace VidShow
 
         private void Window_Drop(object sender, DragEventArgs e)
         {
-            if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
-                AddFiles(files.Where(File.Exists).ToArray(), _act == null);
+            if (!(e.Data.GetData(DataFormats.FileDrop) is string[] files)) return;
+            files = files.Where(File.Exists).ToArray();
+            var audio = files.Where(PlayItem.IsAudioPath).ToArray();
+            var media = files.Where(f => !PlayItem.IsAudioPath(f)).ToArray();
+            if (audio.Length > 0) AddMusic(audio);
+            if (media.Length > 0) AddFiles(media, _act == null);
         }
 
         private void AddFiles(string[] paths, bool loadFirst)
@@ -650,7 +682,7 @@ namespace VidShow
             }
             PlayBtn.Content = play ? "❚❚" : "▶";
             if (play) _timer.Start(); else _timer.Stop();
-            Native.KeepAwake(play);
+            UpdateAwake();
         }
 
         private void Stop_Click(object sender, RoutedEventArgs e)
@@ -932,6 +964,9 @@ namespace VidShow
             bool handled = true;
             switch (e.Key)
             {
+                case Key.K: MusicPlayPause_Click(null, null); break;
+                case Key.Up when (Keyboard.Modifiers & ModifierKeys.Control) != 0: MusicVol.Value = Math.Min(1, MusicVol.Value + 0.05); break;
+                case Key.Down when (Keyboard.Modifiers & ModifierKeys.Control) != 0: MusicVol.Value = Math.Max(0, MusicVol.Value - 0.05); break;
                 case Key.Space: TogglePlay(); break;
                 case Key.B: BlackChk.IsChecked = BlackChk.IsChecked != true; Black_Click(null, null); break;
                 case Key.F: ToggleProjector(); break;
@@ -944,8 +979,11 @@ namespace VidShow
                 case Key.Right: if (_act != null) Seek(_act.Pos + step); break;
                 case Key.Home: Seek(0); break;
                 case Key.Escape: if (_proj != null && _proj.IsVisible) _proj.Hide(); break;
-                case Key.Delete: RemoveSelected(); break;
-                case Key.Enter: if (PlayList.SelectedItem is PlayItem it) GoTo(it, true, true); break;
+                case Key.Delete: if (MusicTab.Visibility == Visibility.Visible) RemoveSelectedMusic(); else RemoveSelected(); break;
+                case Key.Enter:
+                    if (MusicTab.Visibility == Visibility.Visible) { if (MusicList.SelectedItem is PlayItem mi) PlayMusic(mi, true, true); }
+                    else if (PlayList.SelectedItem is PlayItem it) GoTo(it, true, true);
+                    break;
                 default: handled = false; break;
             }
             if (handled) e.Handled = true;
@@ -955,8 +993,9 @@ namespace VidShow
         {
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
             Settings.ScreenIdx = _screenIdx;
-            Settings.Save(_items);
+            Settings.Save(_items, _music);
             Native.KeepAwake(false);
+            _mp.Close();
             _proj?.ForceClose();
             foreach (var s in _slots) s.Clear();
             Application.Current.Shutdown();

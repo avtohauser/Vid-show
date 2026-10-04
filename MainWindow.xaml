@@ -166,36 +166,127 @@
             </Border>
         </Grid>
 
-        <!-- ПРАВАЯ ЧАСТЬ: плейлист -->
+        <!-- ПРАВАЯ ЧАСТЬ: очередь видео и фоновая музыка -->
         <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="12">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <DockPanel Margin="0,0,0,10">
-                    <Button DockPanel.Dock="Right" Content="Очистить" Padding="10,5" FontSize="12" Click="Clear_Click"/>
-                    <Button DockPanel.Dock="Right" Content="＋ Добавить" Padding="10,5" FontSize="12" Margin="0,0,6,0"
-                            Style="{StaticResource AccentButton}" Click="Add_Click"/>
-                    <TextBlock Text="ПЛЕЙЛИСТ" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
-                               VerticalAlignment="Center"/>
-                </DockPanel>
-                <ListBox x:Name="PlayList" Grid.Row="1" ItemTemplate="{StaticResource ItemTpl}"
-                         MouseDoubleClick="PlayList_DoubleClick" SelectionChanged="PlayList_SelectionChanged"/>
-                <DockPanel Grid.Row="2" Margin="0,8,0,0">
-                    <ToggleButton x:Name="HoldChk" DockPanel.Dock="Right" Style="{StaticResource Chip}" Content="∞ Ждать" IsEnabled="False"
-                                  Click="Hold_Click" ToolTip="Картинка ожидания: висит на проекторе, пока вы сами не включите следующее (Пробел или N)"/>
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="▲" Padding="10,5" Margin="0,0,4,0" Click="Up_Click" ToolTip="Выше в очереди"/>
-                        <Button Content="▼" Padding="10,5" Margin="0,0,4,0" Click="Down_Click" ToolTip="Ниже в очереди"/>
-                        <Button Content="✕" Padding="10,5" Click="Remove_Click" ToolTip="Убрать из очереди (Del)"/>
+
+                <!-- Мини-плеер музыки: виден на любой вкладке -->
+                <Border Grid.Row="0" Background="{StaticResource Surface2Brush}" CornerRadius="9" Padding="4">
+                    <DockPanel>
+                        <Button x:Name="MiniPlay" DockPanel.Dock="Left" Style="{StaticResource GhostButton}" Content="▶"
+                                Padding="9,3" FontSize="14" Click="MusicPlayPause_Click" ToolTip="Музыка: пуск / пауза (K)"/>
+                        <TextBlock x:Name="MiniTitle" Text="♪ Музыка не выбрана" VerticalAlignment="Center" FontSize="12.5"
+                                   TextTrimming="CharacterEllipsis" Margin="2,0,8,0"/>
+                    </DockPanel>
+                </Border>
+
+                <UniformGrid Grid.Row="1" Rows="1" Margin="0,10,0,10">
+                    <ToggleButton x:Name="TabVideo" Style="{StaticResource Chip}" Content="🎬 Видео" IsChecked="True"
+                                  Margin="0,0,3,0" Click="TabVideo_Click"/>
+                    <ToggleButton x:Name="TabMusic" Style="{StaticResource Chip}" Content="🎵 Музыка"
+                                  Margin="3,0,0,0" Click="TabMusic_Click"/>
+                </UniformGrid>
+
+                <!-- Вкладка: видео и картинки -->
+                <Grid x:Name="VideoTab" Grid.Row="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Right" Content="Очистить" Padding="10,5" FontSize="12" Click="Clear_Click"/>
+                        <Button DockPanel.Dock="Right" Content="＋ Добавить" Padding="10,5" FontSize="12" Margin="0,0,6,0"
+                                Style="{StaticResource AccentButton}" Click="Add_Click"/>
+                        <TextBlock Text="ОЧЕРЕДЬ" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ListBox x:Name="PlayList" Grid.Row="1" ItemTemplate="{StaticResource ItemTpl}"
+                             MouseDoubleClick="PlayList_DoubleClick" SelectionChanged="PlayList_SelectionChanged"/>
+                    <DockPanel Grid.Row="2" Margin="0,8,0,0">
+                        <ToggleButton x:Name="HoldChk" DockPanel.Dock="Right" Style="{StaticResource Chip}" Content="∞ Ждать" IsEnabled="False"
+                                      Click="Hold_Click" ToolTip="Картинка ожидания: висит на проекторе, пока вы сами не включите следующее (Пробел или N)"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="▲" Padding="10,5" Margin="0,0,4,0" Click="Up_Click" ToolTip="Выше в очереди"/>
+                            <Button Content="▼" Padding="10,5" Margin="0,0,4,0" Click="Down_Click" ToolTip="Ниже в очереди"/>
+                            <Button Content="✕" Padding="10,5" Click="Remove_Click" ToolTip="Убрать из очереди (Del)"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock Grid.Row="3" Margin="0,10,0,0" FontSize="11" LineHeight="17" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedBrush}"
+                               Text="Пробел — пуск/пауза (на картинке ожидания — включить следующее) · B — чёрный экран · F — проектор · M — звук видео · K — музыка · Ctrl+↑/↓ — громкость музыки · L — повтор · ←/→ — ±5 с (Shift — ±30 с) · N/P — следующее/предыдущее · Del — убрать · Esc — скрыть проектор"/>
+                </Grid>
+
+                <!-- Вкладка: фоновая музыка -->
+                <Grid x:Name="MusicTab" Grid.Row="2" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Right" Content="Очистить" Padding="10,5" FontSize="12" Click="MusicClear_Click"/>
+                        <Button DockPanel.Dock="Right" Content="＋ Музыка" Padding="10,5" FontSize="12" Margin="0,0,6,0"
+                                Style="{StaticResource AccentButton}" Click="MusicAdd_Click"/>
+                        <TextBlock Text="ФОН" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ListBox x:Name="MusicList" Grid.Row="1" ItemTemplate="{StaticResource ItemTpl}"
+                             MouseDoubleClick="MusicList_DoubleClick"/>
+
+                    <Grid Grid.Row="2" Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="40"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="40"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="MCur" Text="00:00" FontFamily="Consolas" FontSize="11.5" VerticalAlignment="Center"/>
+                        <Slider x:Name="MPos" Grid.Column="1" Minimum="0" Maximum="1" IsMoveToPointEnabled="True"
+                                ValueChanged="MPos_ValueChanged"/>
+                        <TextBlock x:Name="MTot" Grid.Column="2" Text="00:00" FontFamily="Consolas" FontSize="11.5"
+                                   TextAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                    </Grid>
+
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
+                        <Button Style="{StaticResource GhostButton}" Content="⏮" Click="MusicPrev_Click" ToolTip="Предыдущий трек"/>
+                        <Button x:Name="MusicPlayBtn" Style="{StaticResource AccentButton}" Content="▶" FontSize="16" Width="50"
+                                Click="MusicPlayPause_Click" Margin="4,0" ToolTip="Пуск / пауза (K)"/>
+                        <Button Style="{StaticResource GhostButton}" Content="⏭" Click="MusicNext_Click" ToolTip="Следующий трек"/>
+                        <Button Style="{StaticResource GhostButton}" Content="■" Click="MusicStop_Click" ToolTip="Стоп"/>
                     </StackPanel>
-                </DockPanel>
-                <TextBlock Grid.Row="3" Margin="0,10,0,0" FontSize="11" LineHeight="17" TextWrapping="Wrap"
-                           Foreground="{StaticResource MutedBrush}"
-                           Text="Пробел — пуск/пауза (на картинке ожидания — включить следующее) · B — чёрный экран · F — проектор · M — звук · L — повтор · ←/→ — ±5 с (Shift — ±30 с) · N/P — следующее/предыдущее · Del — убрать из списка · Esc — скрыть проектор"/>
+
+                    <WrapPanel Grid.Row="4" Margin="0,6,0,0" HorizontalAlignment="Center">
+                        <Button x:Name="MusicLoopBtn" Content="🔁 Список" Padding="10,5" FontSize="12" Margin="0,0,5,5"
+                                Click="MusicLoop_Click" ToolTip="Что делать, когда трек закончился: играть список по кругу / зациклить один трек / остановиться"/>
+                        <ToggleButton x:Name="MusicShuffleChk" Style="{StaticResource Chip}" Content="🔀" Margin="0,0,5,5"
+                                      Click="MusicShuffle_Click" ToolTip="Случайный порядок"/>
+                        <ToggleButton x:Name="DuckChk" Style="{StaticResource Chip}" Content="🔉 Приглушать" Margin="0,0,5,5" IsChecked="True"
+                                      Click="Duck_Click" ToolTip="Автоматически делать музыку тише, пока идёт видео со звуком"/>
+                    </WrapPanel>
+
+                    <StackPanel Grid.Row="5" Margin="0,4,0,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="🔊" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <Slider x:Name="MusicVol" Minimum="0" Maximum="1" Value="0.7" IsMoveToPointEnabled="True"
+                                    ValueChanged="MusicVol_ValueChanged" ToolTip="Громкость музыки (Ctrl+↑/↓)"/>
+                        </DockPanel>
+                        <UniformGrid Rows="1" Margin="0,6,0,0">
+                            <Button Content="⤴ Плавно вкл" Padding="8,5" FontSize="12" Margin="0,0,3,0" Click="MusicFadeIn_Click"
+                                    ToolTip="Музыка плавно нарастает"/>
+                            <Button Content="⤵ Плавно выкл" Padding="8,5" FontSize="12" Margin="3,0,0,0" Click="MusicFadeOut_Click"
+                                    ToolTip="Музыка плавно затихает и ставится на паузу (3 с)"/>
+                        </UniformGrid>
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Border>
     </Grid>
