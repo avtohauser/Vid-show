@@ -18,45 +18,6 @@ using Microsoft.Win32;
 
 namespace VidShow
 {
-    public class PlayItem : INotifyPropertyChanged
-    {
-        private static readonly HashSet<string> ImgExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff" };
-
-        private static readonly HashSet<string> AudioExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".mp3", ".wav", ".wma", ".m4a", ".aac", ".flac", ".ogg", ".opus" };
-
-        private bool _playing, _hold;
-        public string Path { get; set; }
-        public string Name => System.IO.Path.GetFileName(Path);
-        public bool IsAudio => AudioExt.Contains(System.IO.Path.GetExtension(Path ?? ""));
-        public static bool IsAudioPath(string p) => AudioExt.Contains(System.IO.Path.GetExtension(p ?? ""));
-        public bool IsImage => ImgExt.Contains(System.IO.Path.GetExtension(Path ?? ""));
-
-        // Картинка ожидания: висит, пока оператор сам не включит следующее.
-        public bool Hold
-        {
-            get => _hold;
-            set { _hold = value; Notify(nameof(Hold)); Notify(nameof(Badge)); }
-        }
-        public string Badge => IsImage ? (Hold ? "∞" : "🖼") : "";
-        public bool IsPlaying
-        {
-            get => _playing;
-            set { _playing = value; Notify(nameof(IsPlaying)); }
-        }
-
-        public static PlayItem Create(string path, bool? hold = null)
-        {
-            var it = new PlayItem { Path = path };
-            it._hold = hold ?? it.IsImage;
-            return it;
-        }
-
-        private void Notify(string n) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
-        public event PropertyChangedEventHandler PropertyChanged;
-    }
-
     // Один «слой» воспроизведения: видео (MediaPlayer) или картинка с собственными часами.
     // Двух слоёв достаточно: пока играет один, второй заранее подгружает следующий элемент очереди.
     internal sealed class Slot
@@ -82,6 +43,7 @@ namespace VidShow
         }
 
         public bool IsImage => Item != null && Item.IsImage;
+        public double EndPos => Item == null ? 0 : (IsImage || Item.Out <= 0 || Item.Out >= Total ? Total : Item.Out);
         public bool Timed => Item != null && (IsImage ? !Item.Hold && Total > 0 : Ready && Total > 0);
 
         public double Pos => IsImage ? _imgBase + _sw.Elapsed.TotalSeconds : Player.Position.TotalSeconds;
@@ -119,6 +81,13 @@ namespace VidShow
         {
             Clear();
             Item = it;
+            if (it.IsBlack)
+            {
+                Brush = System.Windows.Media.Brushes.Black;
+                Total = it.Secs > 0 ? it.Secs : imgSecs;
+                Ready = true;
+                return;
+            }
             if (!File.Exists(it.Path)) { Failed = true; return; }
             if (it.IsImage)
             {
@@ -137,7 +106,7 @@ namespace VidShow
                     bi.Freeze();
                     ImageBrush.ImageSource = bi;
                     Brush = ImageBrush;
-                    Total = imgSecs;
+                    Total = it.Secs > 0 ? it.Secs : imgSecs;
                     Ready = true;
                 }
                 catch { Failed = true; }
@@ -168,6 +137,9 @@ namespace VidShow
         public static int MusicLoop = 1;      // 0 — один раз, 1 — список по кругу, 2 — один трек по кругу
         public static bool MusicShuffle;
         public static bool Duck = true;
+        public static string AudioDevice = "";
+        public static double SfxVol = 0.9;
+        public static readonly string[] Pads = new string[6];
 
         private static string Dir => System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VidShow");
@@ -197,6 +169,12 @@ namespace VidShow
                         case "mloop": int.TryParse(v, out MusicLoop); break;
                         case "mshuffle": MusicShuffle = v == "1"; break;
                         case "duck": Duck = v != "0"; break;
+                        case "device": AudioDevice = v; break;
+                        case "sfxvol": double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out SfxVol); break;
+                        default:
+                            if (p[0].StartsWith("pad") && int.TryParse(p[0].Substring(3), out int pi) && pi >= 0 && pi < Pads.Length)
+                                Pads[pi] = v.Length > 0 ? v : null;
+                            break;
                     }
                 }
             }
@@ -205,6 +183,7 @@ namespace VidShow
             ImgIdx = Math.Max(0, Math.Min(ImgIdx, ImgOpts.Length - 1));
             MusicVol = Math.Max(0, Math.Min(1, MusicVol));
             MusicLoop = Math.Max(0, Math.Min(2, MusicLoop));
+            SfxVol = Math.Max(0, Math.Min(1, SfxVol));
         }
 
         public static void Save(IEnumerable<PlayItem> queue, IEnumerable<PlayItem> music)
@@ -225,23 +204,31 @@ namespace VidShow
                     "mloop=" + MusicLoop,
                     "mshuffle=" + (MusicShuffle ? 1 : 0),
                     "duck=" + (Duck ? 1 : 0),
-                });
-                File.WriteAllLines(MusicPath, music.Select(i => "T|" + i.Path));
-                File.WriteAllLines(QueuePath, queue.Select(i => (i.Hold ? "H|" : "T|") + i.Path));
+                    "device=" + AudioDevice,
+                    "sfxvol=" + SfxVol.ToString("0.00", CultureInfo.InvariantCulture),
+                }.Concat(Pads.Select((pd, k) => "pad" + k + "=" + (pd ?? ""))));
+                WriteList(MusicPath, music);
+                WriteList(QueuePath, queue);
             }
             catch { }
         }
 
-        public static List<PlayItem> LoadQueue() => LoadList(QueuePath);
-        public static List<PlayItem> LoadMusic() => LoadList(MusicPath);
+        public static List<PlayItem> LoadQueue() => ReadList(QueuePath);
+        public static List<PlayItem> LoadMusic() => ReadList(MusicPath);
 
-        private static List<PlayItem> LoadList(string file)
+        public static void WriteList(string file, IEnumerable<PlayItem> items) =>
+            File.WriteAllLines(file, items.Where(i => !i.IsVirtual).Select(i => i.ToLine()));
+
+        public static List<PlayItem> ReadList(string file)
         {
             var res = new List<PlayItem>();
             try
             {
                 foreach (var line in File.ReadAllLines(file))
-                    if (line.Length > 2 && line[1] == '|') res.Add(PlayItem.Create(line.Substring(2), line[0] == 'H'));
+                {
+                    var it = PlayItem.FromLine(line);
+                    if (it != null) res.Add(it);
+                }
             }
             catch { }
             return res;
@@ -291,6 +278,10 @@ namespace VidShow
         private readonly Image[] _tiles = new Image[Filmstrip.Count];
         private bool _playing, _ready;
         private int _speedIdx = 2;
+        private int _loopsDone, _virtualNext;
+        private bool _waitNext, _fadeViaBlack;
+        private ProgramWindow _program;
+        private Prober _prober;
         private int _screenIdx;
 
         private double FadeSecs => Settings.FadeOpts[Settings.FadeIdx];
@@ -301,6 +292,7 @@ namespace VidShow
         {
             InitializeComponent();
             Settings.Load();
+            _prober = new Prober(() => _program?.Rebuild());
 
             System.Windows.Media.RenderOptions.SetBitmapScalingMode(PrevA, BitmapScalingMode.LowQuality);
             System.Windows.Media.RenderOptions.SetBitmapScalingMode(PrevB, BitmapScalingMode.LowQuality);
@@ -345,6 +337,7 @@ namespace VidShow
             else
             {
                 foreach (var it in Settings.LoadQueue()) _items.Add(it);
+                _prober.Enqueue(_items);
                 if (_items.Count > 0) ShowHint("Очередь загружена", "нажмите ▶ — начнётся с первого элемента", false);
             }
         }
@@ -414,8 +407,10 @@ namespace VidShow
                 _items.Add(it);
                 if (first == null) first = it;
             }
+            _prober?.Enqueue(_items);
             if (loadFirst && first != null) GoTo(first, false, false);
             else PreloadNext();
+            _program?.Rebuild();
         }
 
         private void PlayList_DoubleClick(object sender, MouseButtonEventArgs e)
@@ -426,17 +421,15 @@ namespace VidShow
         private void PlayList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             var it = PlayList.SelectedItem as PlayItem;
-            HoldChk.IsEnabled = it != null && it.IsImage;
+            HoldChk.IsEnabled = it != null;
             HoldChk.IsChecked = it != null && it.Hold;
         }
 
         private void Hold_Click(object sender, RoutedEventArgs e)
         {
-            if (!(PlayList.SelectedItem is PlayItem it) || !it.IsImage) return;
+            if (!(PlayList.SelectedItem is PlayItem it)) return;
             it.Hold = HoldChk.IsChecked == true;
-            foreach (var s in _slots)
-                if (s.Item == it) s.Total = it.Hold ? 0 : ImgSecs;
-            if (_act?.Item == it) UpdateTimeUi();
+            AfterEdit(it);
         }
 
         private void Up_Click(object sender, RoutedEventArgs e) => MoveSelected(-1);
@@ -449,6 +442,7 @@ namespace VidShow
             _items.Move(i, j);
             PlayList.SelectedIndex = j;
             PreloadNext();
+            _program?.Rebuild();
         }
 
         private void Remove_Click(object sender, RoutedEventArgs e) => RemoveSelected();
@@ -459,7 +453,8 @@ namespace VidShow
             int idx = PlayList.SelectedIndex;
             _items.Remove(it);
             if (_items.Count > 0) PlayList.SelectedIndex = Math.Min(idx, _items.Count - 1);
-            PreloadNext(); // текущий элемент продолжает играть, даже если его убрали из списка
+            PreloadNext();
+            _program?.Rebuild(); // текущий элемент продолжает играть, даже если его убрали из списка
         }
 
         private void Clear_Click(object sender, RoutedEventArgs e)
@@ -475,6 +470,83 @@ namespace VidShow
             RefreshLayers();
             FileName.Text = "Vid-show";
             ShowHint("Перетащите видео и картинки сюда", "или нажмите «＋ Добавить» справа", false);
+            _program?.Rebuild();
+        }
+
+        // ---------- Свойства элемента, чёрный экран, проект, программа ----------
+
+        private void EditSelected()
+        {
+            if (PlayList.SelectedItem is PlayItem it) EditCue(it);
+        }
+
+        private void Edit_Click(object sender, RoutedEventArgs e) => EditSelected();
+
+        public void EditCue(PlayItem it)
+        {
+            var dlg = new CueWindow(it, GetPosFor) { Owner = this };
+            if (dlg.ShowDialog() == true) AfterEdit(it);
+        }
+
+        // Текущая позиция плеера для элемента (чтобы «взять In/Out с плеера»); null — элемент сейчас не играет
+        private double? GetPosFor(PlayItem it) => _act?.Item == it && !_act.IsImage ? (double?)_act.Pos : null;
+
+        private void AfterEdit(PlayItem it)
+        {
+            it.Refresh();
+            foreach (var s in _slots)
+                if (s.Item == it && s.IsImage) s.Total = it.Secs > 0 ? it.Secs : ImgSecs;
+            if (_act?.Item == it) UpdateTimeUi();
+            PlayList_SelectionChanged(null, null);
+            PreloadNext();
+            _program?.Rebuild();
+        }
+
+        private void AddBlack_Click(object sender, RoutedEventArgs e)
+        {
+            var it = PlayItem.CreateBlack();
+            int idx = PlayList.SelectedIndex >= 0 ? PlayList.SelectedIndex + 1 : _items.Count;
+            _items.Insert(idx, it);
+            PlayList.SelectedItem = it;
+            PreloadNext();
+            _program?.Rebuild();
+        }
+
+        private void SaveProject_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new SaveFileDialog { Filter = "Программа Vid-show|*.vshow", FileName = "программа.vshow" };
+            if (dlg.ShowDialog() != true) return;
+            try { Settings.WriteList(dlg.FileName, _items); }
+            catch (Exception ex) { MessageBox.Show("Не удалось сохранить: " + ex.Message); }
+        }
+
+        private void OpenProject_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog { Filter = "Программа Vid-show|*.vshow" };
+            if (dlg.ShowDialog() != true) return;
+            if (_items.Count > 0 &&
+                MessageBox.Show("Заменить текущую очередь программой из файла?", "Vid-show", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+            var list = Settings.ReadList(dlg.FileName);
+            Clear_Click(null, null);
+            foreach (var it in list) _items.Add(it);
+            _prober.Enqueue(_items);
+            if (_items.Count > 0) GoTo(_items[0], false, false);
+            _program?.Rebuild();
+        }
+
+        private void Program_Click(object sender, RoutedEventArgs e) => OpenProgram();
+
+        private void OpenProgram()
+        {
+            if (_program == null)
+            {
+                _program = new ProgramWindow(_items, it => PlayList.SelectedItem = it, it => GoTo(it, true, true), EditCue,
+                    () => { PreloadNext(); }, () => _act?.Item, () => _act != null && _act.Timed && !_act.IsImage ? _act.Pos / _act.Total : 0);
+                _program.Owner = this;
+                _program.Closed += (s, a) => _program = null;
+            }
+            _program.Show();
+            _program.Activate();
         }
 
         // Подгружаем следующий элемент очереди в свободный слой — чтобы переключение было мгновенным.
@@ -511,23 +583,28 @@ namespace VidShow
                 if (from == null) ShowHint("Не удалось открыть файл", it.Name, true);
                 return false;
             }
-            if (preloaded) to.Seek(0);
+            if (preloaded && !to.IsImage) to.Seek(it.In);
+            else if (preloaded) to.Seek(0);
 
             if (from?.Item != null) from.Item.IsPlaying = false;
             it.IsPlaying = true;
             _act = to;
-            PlayList.SelectedItem = it;
+            _loopsDone = 0;
+            _waitNext = false;
+            if (!it.IsVirtual) PlayList.SelectedItem = it;
             FileName.Text = it.Name;
             HideHint();
             to.Player.SpeedRatio = Speeds[_speedIdx];
 
-            bool fade = allowFade && play && from?.Item != null && FadeSecs > 0;
+            double fs = it.Fade >= 0 ? it.Fade : FadeSecs;
+            bool fade = allowFade && play && from?.Item != null && fs > 0;
             _z[to.Index] = 2;
             _z[from?.Index ?? 1 - to.Index] = 1;
             if (fade)
             {
                 _fadeFrom = from;
-                _fadeDur = FadeSecs;
+                _fadeDur = fs;
+                _fadeViaBlack = it.ViaBlack;
                 _op[to.Index] = 0; _op[from.Index] = 1;
                 _gain[to.Index] = 0; _gain[from.Index] = 1;
                 _fadeSw.Restart();
@@ -544,7 +621,17 @@ namespace VidShow
             SetPlaying(play);
             UpdateTimeUi();
             if (!fade) PreloadNext();
+            if (play) RunCueActions(it);
+            _program?.Rebuild();
             return true;
+        }
+
+        // Фанфара и действия с музыкой, привязанные к моменту старта элемента
+        private void RunCueActions(PlayItem it)
+        {
+            if (!string.IsNullOrEmpty(it.Sfx)) PlaySfx(it.Sfx);
+            if (it.MusicAct == 1) MusicStartAction();
+            else if (it.MusicAct == 2) MusicFadeOut_Click(null, null);
         }
 
         private void FadeTick()
@@ -552,9 +639,22 @@ namespace VidShow
             if (_fadeFrom == null) { _fadeTimer.Stop(); return; }
             double t = Math.Min(1, _fadeSw.Elapsed.TotalSeconds / _fadeDur);
             double e = t * t * (3 - 2 * t); // плавный старт и финиш
-            _op[_act.Index] = e;
-            _gain[_act.Index] = e;
-            _gain[_fadeFrom.Index] = 1 - e;
+            double toOp, fromOp, toGain, fromGain;
+            if (_fadeViaBlack)
+            {
+                // сначала старое уходит в чёрное, потом из чёрного проявляется новое
+                double a = Math.Min(1, e * 2), b = Math.Max(0, e * 2 - 1);
+                fromOp = fromGain = 1 - a;
+                toOp = toGain = b;
+            }
+            else
+            {
+                toOp = toGain = e;
+                fromOp = 1;
+                fromGain = 1 - e;
+            }
+            _op[_act.Index] = toOp; _op[_fadeFrom.Index] = fromOp;
+            _gain[_act.Index] = toGain; _gain[_fadeFrom.Index] = fromGain;
             ApplyVolume();
             UpdateOpacity();
             if (t >= 1) FinishTransition();
@@ -586,16 +686,36 @@ namespace VidShow
         private void Next_Click(object sender, RoutedEventArgs e) => Step(1);
         private void Prev_Click(object sender, RoutedEventArgs e) => Step(-1);
 
+        // Оператор должен сам нажать «дальше»: картинка/чёрный с «ждать», зацикленное видео, видео доиграло и ждёт
+        private bool WaitingForOperator =>
+            _act?.Item != null && (_waitNext || _act.Item.IsVirtual || (_act.IsImage && _act.Item.Hold) ||
+                                   (!_act.IsImage && _act.Item.Loops == 0));
+
+        private bool HasNext()
+        {
+            if (_act?.Item == null) return false;
+            if (_act.Item.IsVirtual) return _virtualNext < _items.Count;
+            int i = _items.IndexOf(_act.Item);
+            return i >= 0 && i + 1 < _items.Count;
+        }
+
         private void Step(int dir)
         {
             if (_items.Count == 0) return;
-            if (dir < 0 && _act != null && !_act.IsImage && _act.Pos > 3) { Seek(0); return; }
-            int i = _act == null ? 0 : _items.IndexOf(_act.Item) + dir;
-            if (_act != null && _items.IndexOf(_act.Item) < 0) return;
+            if (dir < 0 && _act?.Item != null && !_act.IsImage && _act.Pos > _act.Item.In + 3) { Seek(_act.Item.In); return; }
+            int i;
+            if (_act == null) i = 0;
+            else if (_act.Item.IsVirtual) { if (dir < 0) return; i = _virtualNext; }
+            else
+            {
+                int cur = _items.IndexOf(_act.Item);
+                if (cur < 0) return;
+                i = cur + dir;
+            }
             if (i < 0) i = 0;
             if (i >= _items.Count) return;
-            bool wasHold = _act != null && _act.IsImage && _act.Item.Hold;
-            GoTo(_items[i], _playing || _act == null || wasHold, true);
+            bool waiting = _act == null || WaitingForOperator;
+            GoTo(_items[i], _playing || waiting, true);
         }
 
         // ---------- Воспроизведение ----------
@@ -608,6 +728,8 @@ namespace VidShow
             int w = s.Player.NaturalVideoWidth, h = s.Player.NaturalVideoHeight;
             if (w > 0 && h > 0) s.Drawing.Rect = new Rect(0, 0, w, h); // правильные пропорции кадра
             s.Player.SpeedRatio = Speeds[_speedIdx];
+            if (s.Total > 0 && s.Item.Duration <= 0) { s.Item.Duration = s.Total; s.Item.Refresh(); _program?.Rebuild(); }
+            if (s.Item.In > 0 && s.Item.In < s.Total) s.Player.Position = TimeSpan.FromSeconds(s.Item.In);
             if (s == _act) UpdateTimeUi();
         }
 
@@ -622,39 +744,86 @@ namespace VidShow
         private void OnEnded(Slot s)
         {
             if (s != _act) return;
-            if (LoopChk.IsChecked == true)
+            OnItemFinished();
+        }
+
+        // Элемент доиграл (или дошёл до точки «Out»): повторить, затемнить, ждать оператора или идти дальше.
+        private void OnItemFinished()
+        {
+            var a = _act;
+            if (a?.Item == null || _waitNext) return;
+            var it = a.Item;
+            bool loopOne = LoopChk.IsChecked == true;
+            if (a.IsImage)
             {
-                s.Seek(0);
-                s.Play();
+                if (loopOne) { a.Seek(0); return; }
+            }
+            else if (loopOne || it.Loops == 0 || _loopsDone + 1 < it.Loops)
+            {
+                _loopsDone++;
+                a.Seek(it.In);
+                if (_playing) a.Play();
                 return;
             }
-            if (!AdvanceAuto()) { SetPlaying(false); UpdateTime(); } // остаёмся на последнем кадре
+
+            if (it.EndBlack)
+            {
+                var b = PlayItem.CreateBlack();
+                b.IsVirtual = true;
+                _virtualNext = _items.IndexOf(it) + 1;
+                GoTo(b, true, true);
+                return;
+            }
+            if (it.Hold)
+            {
+                SetPlaying(false); // остаёмся на последнем кадре и ждём оператора
+                _waitNext = true;
+                return;
+            }
+            if (!AdvanceAuto()) SetPlaying(false); // конец очереди — остаёмся на последнем кадре
+        }
+
+        // Уйдёт ли программа с этого элемента сама (после последнего повтора)?
+        private bool WillLeave(PlayItem it)
+        {
+            if (LoopChk.IsChecked == true || it.Loops == 0 || _loopsDone + 1 < it.Loops || it.Hold) return false;
+            return it.EndBlack || HasNext();
+        }
+
+        private double LeadFade(PlayItem it)
+        {
+            if (it.EndBlack) return FadeSecs;
+            int i = _items.IndexOf(it);
+            if (i < 0 || i + 1 >= _items.Count) return 0;
+            var n = _items[i + 1];
+            return n.Fade >= 0 ? n.Fade : FadeSecs;
         }
 
         private void Tick()
         {
-            if (_act?.Item == null) return;
-            UpdateTime();
-            if (!_playing || _fadeFrom != null || !_act.Timed) return;
-
             var a = _act;
-            double rem = a.Total - a.Pos;
+            if (a?.Item == null) return;
+            UpdateTime();
+            if (!_playing || _fadeFrom != null || !a.Timed) return;
+
             if (a.IsImage)
             {
-                if (rem > 0) return;
-                if (LoopChk.IsChecked == true) a.Seek(0);
-                else if (!AdvanceAuto()) { SetPlaying(false); }
+                if (a.Total - a.Pos <= 0) OnItemFinished();
+                return;
             }
-            else if (FadeSecs > 0 && LoopChk.IsChecked != true && HasNext())
+            double rem = a.EndPos - a.Pos;
+            if (rem <= 0.03) { OnItemFinished(); return; }
+            if (WillLeave(a.Item))
             {
                 // начинаем переход заранее, чтобы проявление закончилось ровно с концом видео
-                if (rem <= Math.Min(FadeSecs, a.Total * 0.5)) AdvanceAuto();
+                double lead = Math.Min(LeadFade(a.Item), (a.EndPos - a.Item.In) * 0.5);
+                if (lead > 0 && rem <= lead) OnItemFinished();
             }
         }
 
-        private void PlayPause_Click(object sender, RoutedEventArgs e) => TogglePlay();
+        private void PlayPause_Click(object sender, RoutedEventArgs e) => TogglePlay(false);
 
-        private void TogglePlay()
+        private void TogglePlay(bool pureToggle)
         {
             if (_act == null)
             {
@@ -662,9 +831,18 @@ namespace VidShow
                 if (it != null) GoTo(it, true, false);
                 return;
             }
-            // Картинка ожидания: «старт» = включить следующее из очереди
-            if (_act.IsImage && _act.Item.Hold && HasNext()) { Step(1); return; }
+            // «Старт» на картинке ожидания / зацикленном видео = включить следующее из очереди
+            if (!pureToggle && WaitingForOperator && HasNext()) { Step(1); return; }
+            if (_waitNext) { _waitNext = false; a_Restart(); return; }
             SetPlaying(!_playing);
+        }
+
+        // После «ждать» без следующего элемента: проиграть сначала
+        private void a_Restart()
+        {
+            _loopsDone = 0;
+            _act?.Seek(_act.Item?.In ?? 0);
+            SetPlaying(true);
         }
 
         private void SetPlaying(bool play)
@@ -705,7 +883,18 @@ namespace VidShow
         private void UpdateTimeUi()
         {
             UpdateTime();
+            UpdateTrim();
             LoadFilm();
+        }
+
+        // Затемняем на таймлайне части, которые не войдут в показ (до «In» и после «Out»)
+        private void UpdateTrim()
+        {
+            var a = _act;
+            double w = FilmArea.ActualWidth;
+            if (a?.Item == null || a.IsImage || !a.Timed || a.Total <= 0) { TrimL.Width = 0; TrimR.Width = 0; return; }
+            TrimL.Width = Math.Max(0, Math.Min(1, a.Item.In / a.Total)) * w;
+            TrimR.Width = Math.Max(0, Math.Min(1, 1 - a.EndPos / a.Total)) * w;
         }
 
         // Раскадровка таймлайна: для видео — кадры по ходу ролика, для картинки — она сама.
@@ -740,7 +929,7 @@ namespace VidShow
             if (a.Timed)
             {
                 CurTime.Text = Fmt(p);
-                RemTime.Text = "−" + Fmt(Math.Max(0, a.Total - p));
+                RemTime.Text = "−" + Fmt(Math.Max(0, a.EndPos - p));
                 SetHead(p / a.Total);
             }
             else
@@ -778,6 +967,7 @@ namespace VidShow
         {
             Film.Clip = new RectangleGeometry(new Rect(0, 0, Film.ActualWidth, Film.ActualHeight), 8, 8);
             UpdateTime();
+            UpdateTrim();
         }
 
         private double FilmFrac(MouseEventArgs e) =>
@@ -830,7 +1020,7 @@ namespace VidShow
             Settings.ImgIdx = (Settings.ImgIdx + 1) % Settings.ImgOpts.Length;
             UpdateQueueButtons();
             foreach (var s in _slots)
-                if (s.IsImage && !s.Item.Hold) s.Total = ImgSecs;
+                if (s.IsImage && s.Item.Secs <= 0) s.Total = ImgSecs;
             if (_act != null && _act.IsImage) UpdateTimeUi();
         }
 
@@ -967,7 +1157,15 @@ namespace VidShow
                 case Key.K: MusicPlayPause_Click(null, null); break;
                 case Key.Up when (Keyboard.Modifiers & ModifierKeys.Control) != 0: MusicVol.Value = Math.Min(1, MusicVol.Value + 0.05); break;
                 case Key.Down when (Keyboard.Modifiers & ModifierKeys.Control) != 0: MusicVol.Value = Math.Max(0, MusicVol.Value - 0.05); break;
-                case Key.Space: TogglePlay(); break;
+                case Key.Space: TogglePlay((Keyboard.Modifiers & ModifierKeys.Shift) != 0); break;
+                case Key.E: EditSelected(); break;
+                case Key.G: OpenProgram(); break;
+                case Key.D1: case Key.NumPad1: PadFire(0); break;
+                case Key.D2: case Key.NumPad2: PadFire(1); break;
+                case Key.D3: case Key.NumPad3: PadFire(2); break;
+                case Key.D4: case Key.NumPad4: PadFire(3); break;
+                case Key.D5: case Key.NumPad5: PadFire(4); break;
+                case Key.D6: case Key.NumPad6: PadFire(5); break;
                 case Key.B: BlackChk.IsChecked = BlackChk.IsChecked != true; Black_Click(null, null); break;
                 case Key.F: ToggleProjector(); break;
                 case Key.M: MuteChk.IsChecked = MuteChk.IsChecked != true; Mute_Click(null, null); break;
@@ -995,7 +1193,8 @@ namespace VidShow
             Settings.ScreenIdx = _screenIdx;
             Settings.Save(_items, _music);
             Native.KeepAwake(false);
-            _mp.Close();
+            _mPlayer.Dispose();
+            AudioPlayer.StopAllOnce();
             _proj?.ForceClose();
             foreach (var s in _slots) s.Clear();
             Application.Current.Shutdown();

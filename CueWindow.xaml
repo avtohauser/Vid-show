@@ -1,0 +1,118 @@
+<Window x:Class="VidShow.CueWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Свойства элемента" Width="520" Height="720" MinHeight="520"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI, Segoe UI Symbol" WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        SourceInitialized="Window_SourceInitialized">
+    <Window.Resources>
+        <Style x:Key="Cap" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Margin" Value="0,14,0,6"/>
+        </Style>
+        <Style x:Key="Note" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,5,0,0"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+            <StackPanel>
+                <TextBlock x:Name="FileLine" FontSize="12" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
+
+                <TextBlock Text="НАЗВАНИЕ В ПРОГРАММЕ" Style="{StaticResource Cap}"/>
+                <TextBox x:Name="TitleBox"/>
+
+                <StackPanel x:Name="TrimPanel">
+                    <TextBlock Text="ОБРЕЗКА — КОГДА НАЧАТЬ И КОГДА СНЯТЬ" Style="{StaticResource Cap}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Начать с (мин:сек)" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBox x:Name="InBox" ToolTip="Пусто или 0 — с самого начала. Примеры: 12, 1:05, 1:05.5"/>
+                            <Button x:Name="InGet" Content="⏱ Взять с плеера" Margin="0,6,0,0" Padding="8,5" FontSize="12" Click="InGet_Click"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Снять на (мин:сек)" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBox x:Name="OutBox" ToolTip="Пусто — играть до конца файла"/>
+                            <Button x:Name="OutGet" Content="⏱ Взять с плеера" Margin="0,6,0,0" Padding="8,5" FontSize="12" Click="OutGet_Click"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock x:Name="TrimNote" Style="{StaticResource Note}"
+                               Text="Чтобы взять время с плеера: включите этот элемент, перемотайте на нужное место и нажмите кнопку. Сам файл не меняется."/>
+
+                    <TextBlock Text="ПОВТОР" Style="{StaticResource Cap}"/>
+                    <DockPanel>
+                        <ToggleButton x:Name="LoopInf" DockPanel.Dock="Right" Style="{StaticResource Chip}" Content="∞ по кругу" Margin="10,0,0,0"
+                                      Padding="12,8" Click="LoopInf_Click"
+                                      ToolTip="Зациклить: играет по кругу, пока вы сами не нажмёте «дальше»"/>
+                        <TextBlock Text="Сыграть раз" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBox x:Name="LoopsBox" Width="70" HorizontalAlignment="Left"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource Note}"
+                               Text="Вместе с обрезкой это зацикливает кусок видео — например, фоновую петлю до начала выступления."/>
+                </StackPanel>
+
+                <StackPanel x:Name="StillPanel" Visibility="Collapsed">
+                    <TextBlock Text="СКОЛЬКО ДЕРЖАТЬ НА ЭКРАНЕ" Style="{StaticResource Cap}"/>
+                    <DockPanel>
+                        <TextBlock Text="Секунд" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBox x:Name="SecsBox" Width="70" HorizontalAlignment="Left"
+                                 ToolTip="0 или пусто — взять общую настройку «Таймер картинки»"/>
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource Note}" Text="Работает, если не включено «ждать оператора»."/>
+                </StackPanel>
+
+                <TextBlock Text="В КОНЦЕ" Style="{StaticResource Cap}"/>
+                <WrapPanel>
+                    <ToggleButton x:Name="HoldChk" Style="{StaticResource Chip}" Content="⏸ Ждать оператора" Padding="12,8" Margin="0,0,8,6"
+                                  ToolTip="Остановиться и ждать, пока вы не включите следующий элемент"/>
+                    <ToggleButton x:Name="EndBlackChk" Style="{StaticResource Chip}" Content="◐ Затемнить и ждать" Padding="12,8" Margin="0,0,8,6"
+                                  ToolTip="В конце плавно уйти в чёрный экран и ждать оператора"/>
+                </WrapPanel>
+
+                <TextBlock Text="ПЕРЕХОД В ЭТОТ ЭЛЕМЕНТ" Style="{StaticResource Cap}"/>
+                <DockPanel>
+                    <ToggleButton x:Name="ViaBlackChk" DockPanel.Dock="Right" Style="{StaticResource Chip}" Content="◐ Через чёрное" Padding="12,8"
+                                  Margin="10,0,0,0" ToolTip="Старое уходит в чёрный, потом из чёрного проявляется это"/>
+                    <TextBlock Text="Длительность, с" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBox x:Name="FadeBox" Width="70" HorizontalAlignment="Left" ToolTip="Пусто — общая настройка «Переход». 0 — резкая смена"/>
+                </DockPanel>
+
+                <TextBlock Text="ФАНФАРА ПРИ СТАРТЕ" Style="{StaticResource Cap}"/>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="✕" Padding="10,6" Margin="6,0,0,0" Click="SfxClear_Click"/>
+                    <Button DockPanel.Dock="Right" Content="Выбрать…" Padding="10,6" Margin="6,0,0,0" Click="SfxPick_Click"/>
+                    <TextBox x:Name="SfxBox" IsReadOnly="True"/>
+                </DockPanel>
+                <TextBlock Style="{StaticResource Note}" Text="Звук проигрывается один раз в момент включения этого элемента, музыка на это время становится тише."/>
+
+                <TextBlock Text="ФОНОВАЯ МУЗЫКА В ЭТОТ МОМЕНТ" Style="{StaticResource Cap}"/>
+                <UniformGrid Rows="1">
+                    <ToggleButton x:Name="Mus0" Style="{StaticResource Chip}" Content="Не трогать" Padding="6,8" Margin="0,0,4,0" Click="Mus_Click"/>
+                    <ToggleButton x:Name="Mus1" Style="{StaticResource Chip}" Content="♪ Включить" Padding="6,8" Margin="2,0" Click="Mus_Click"/>
+                    <ToggleButton x:Name="Mus2" Style="{StaticResource Chip}" Content="♪ Плавно выкл" Padding="6,8" Margin="4,0,0,0" Click="Mus_Click"/>
+                </UniformGrid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="1" Margin="0,14,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Right" Content="Отмена" Padding="16,8" Margin="8,0,0,0" IsCancel="True"/>
+            <Button DockPanel.Dock="Right" Style="{StaticResource AccentButton}" Content="Сохранить" Padding="18,8" IsDefault="True" Click="Ok_Click"/>
+            <TextBlock x:Name="ErrText" Foreground="#FF8DA1" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="260"/>
+        </DockPanel>
+    </Grid>
+</Window>

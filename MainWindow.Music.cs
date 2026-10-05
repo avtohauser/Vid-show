@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -16,7 +18,10 @@ namespace VidShow
         private const string AudioFilter = "Музыка|*.mp3;*.wav;*.wma;*.m4a;*.aac;*.flac;*.ogg;*.opus|Все файлы|*.*";
         private static readonly string[] LoopNames = { "➡ Один раз", "🔁 Список", "🔂 Трек" };
 
-        private readonly System.Windows.Media.MediaPlayer _mp = new System.Windows.Media.MediaPlayer();
+        private readonly AudioPlayer _mPlayer = new AudioPlayer();
+        private List<string> _devices = new List<string>();
+        private int _devIdx = -1; // -1 — по умолчанию
+        private int _sfxActive;
         private readonly ObservableCollection<PlayItem> _music = new ObservableCollection<PlayItem>();
         private readonly DispatcherTimer _mTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         private readonly Random _rnd = new Random();
@@ -33,9 +38,11 @@ namespace VidShow
             DuckChk.IsChecked = Settings.Duck;
             MusicLoopBtn.Content = LoopNames[Settings.MusicLoop];
 
-            _mp.MediaOpened += (s, e) => OnMusicOpened();
-            _mp.MediaEnded += (s, e) => OnMusicEnded();
-            _mp.MediaFailed += (s, e) => OnMusicFailed();
+            _mPlayer.Ended += OnMusicEnded;
+            _mPlayer.Failed += OnMusicFailed;
+            RefreshDevices();
+            SfxVol.Value = Settings.SfxVol;
+            BuildPads();
             _mTimer.Tick += (s, e) => MusicTick();
             _mTimer.Start();
 
@@ -89,7 +96,7 @@ namespace VidShow
 
         private void MusicClear_Click(object sender, RoutedEventArgs e)
         {
-            _mp.Close();
+            _mPlayer.Close();
             _music.Clear();
             _mcur = null;
             _mOpened = false;
@@ -110,7 +117,9 @@ namespace VidShow
             _mOpened = false;
             MiniTitle.Text = "♪ " + it.Name;
             if (!File.Exists(it.Path)) { MiniTitle.Text = "♪ Файл не найден: " + it.Name; SetMusicPlaying(false); return; }
-            _mp.Open(new Uri(it.Path));
+            if (!_mPlayer.Open(it.Path)) { OnMusicFailed(); return; }
+            _mPlayer.Loop = Settings.MusicLoop == 2;
+            OnMusicOpened();
             if (play && fadeIn) { _mFade = 0; _mFadeTarget = 1; _mFadeDur = 1.5; _mPauseAtZero = false; }
             ApplyMusicVolume();
             SetMusicPlaying(play);
@@ -119,7 +128,7 @@ namespace VidShow
         private void SetMusicPlaying(bool p)
         {
             _mPlaying = p;
-            if (p) _mp.Play(); else _mp.Pause();
+            if (p) _mPlayer.Play(); else _mPlayer.Pause();
             string icon = p ? "❚❚" : "▶";
             MiniPlay.Content = icon;
             MusicPlayBtn.Content = icon;
@@ -143,7 +152,7 @@ namespace VidShow
         {
             if (_mcur == null) return;
             SetMusicPlaying(false);
-            _mp.Position = TimeSpan.Zero;
+            _mPlayer.Position = 0;
             UpdateMusicTime();
         }
 
@@ -153,7 +162,7 @@ namespace VidShow
         private void MusicStep(int dir, bool wrap)
         {
             if (_music.Count == 0) return;
-            if (dir < 0 && _mOpened && _mp.Position.TotalSeconds > 3) { _mp.Position = TimeSpan.Zero; return; }
+            if (dir < 0 && _mOpened && _mPlayer.Position > 3) { _mPlayer.Position = 0; return; }
             int cur = _mcur == null ? -1 : _music.IndexOf(_mcur);
             int next;
             if (Settings.MusicShuffle && _music.Count > 1)
@@ -176,7 +185,7 @@ namespace VidShow
         {
             _mOpened = true;
             _mFails = 0;
-            double dur = _mp.NaturalDuration.HasTimeSpan ? _mp.NaturalDuration.TimeSpan.TotalSeconds : 0;
+            double dur = _mPlayer.Duration;
             _mSet = true;
             MPos.Maximum = Math.Max(dur, 0.1);
             MPos.Value = 0;
@@ -187,12 +196,8 @@ namespace VidShow
 
         private void OnMusicEnded()
         {
-            if (Settings.MusicLoop == 2)
-            {
-                _mp.Position = TimeSpan.Zero;
-                _mp.Play();
-            }
-            else MusicStep(1, Settings.MusicLoop == 1);
+            // один трек по кругу зациклен самим плеером (без пауз), сюда попадаем только для списка
+            MusicStep(1, Settings.MusicLoop == 1);
         }
 
         private void OnMusicFailed()
@@ -207,7 +212,7 @@ namespace VidShow
         private void ApplyMusicVolume()
         {
             double v = MusicVol.Value;
-            _mp.Volume = Math.Max(0, Math.Min(1, v * v * _mGain * _mFade)); // квадрат — ползунок ощущается естественнее
+            _mPlayer.Volume = Math.Max(0, Math.Min(1, v * v * _mGain * _mFade)); // квадрат — ползунок ощущается естественнее
         }
 
         private void MusicTick()
@@ -219,6 +224,8 @@ namespace VidShow
             {
                 try { if (a.Player.HasAudio) target = 0.25; } catch { }
             }
+            if (_sfxActive > 0 && AudioPlayer.LiveCount > 0) target = Math.Min(target, 0.3); // под фанфару музыка тише
+            else _sfxActive = 0;
             _mGain += (target - _mGain) * 0.12;
 
             if (_mFade != _mFadeTarget)
@@ -263,6 +270,7 @@ namespace VidShow
         {
             Settings.MusicLoop = (Settings.MusicLoop + 1) % LoopNames.Length;
             MusicLoopBtn.Content = LoopNames[Settings.MusicLoop];
+            _mPlayer.Loop = Settings.MusicLoop == 2;
         }
 
         private void MusicShuffle_Click(object sender, RoutedEventArgs e) => Settings.MusicShuffle = MusicShuffleChk.IsChecked == true;
@@ -273,7 +281,7 @@ namespace VidShow
         private void UpdateMusicTime()
         {
             if (!_mOpened) return;
-            double p = _mp.Position.TotalSeconds;
+            double p = _mPlayer.Position;
             MCur.Text = Fmt(p);
             if (!MPos.IsMouseCaptureWithin)
             {
@@ -286,8 +294,117 @@ namespace VidShow
         private void MPos_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_mSet || !_mReady || !_mOpened) return;
-            _mp.Position = TimeSpan.FromSeconds(MPos.Value);
+            _mPlayer.Position = MPos.Value;
             MCur.Text = Fmt(MPos.Value);
+        }
+
+        // ---------- Включить музыку из программы (действие элемента) ----------
+
+        private void MusicStartAction()
+        {
+            if (_mcur == null)
+            {
+                var it = MusicList.SelectedItem as PlayItem ?? _music.FirstOrDefault();
+                if (it != null) PlayMusic(it, true, true);
+                return;
+            }
+            if (!_mPlayer.IsPlaying)
+            {
+                _mFade = 0; _mFadeTarget = 1; _mFadeDur = 2; _mPauseAtZero = false;
+                SetMusicPlaying(true);
+            }
+            else { _mFadeTarget = 1; _mPauseAtZero = false; }
+        }
+
+        // ---------- Звуковые эффекты и фанфары ----------
+
+        private int DeviceNumber => _devIdx; // -1 — по умолчанию, иначе номер WaveOut
+
+        public void PlaySfx(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            _sfxActive++;
+            AudioPlayer.PlayOnce(path, Settings.SfxVol * Settings.SfxVol, DeviceNumber);
+        }
+
+        private void SfxVol_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_mReady) Settings.SfxVol = SfxVol.Value;
+        }
+
+        private void BuildPads()
+        {
+            PadGrid.Children.Clear();
+            for (int i = 0; i < Settings.Pads.Length; i++)
+            {
+                int k = i;
+                var b = new Button { Padding = new Thickness(4, 8, 4, 8), Margin = new Thickness(2), FontSize = 12 };
+                b.Content = PadLabel(k);
+                b.ToolTip = "Клавиша " + (k + 1) + ". Левая кнопка — играть, правая — назначить звук";
+                b.Click += (s, e) => PadFire(k);
+                b.MouseRightButtonUp += (s, e) => { PadAssign(k); e.Handled = true; };
+                PadGrid.Children.Add(b);
+            }
+        }
+
+        private string PadLabel(int k)
+        {
+            var p = Settings.Pads[k];
+            return (k + 1) + "  " + (string.IsNullOrEmpty(p) ? "＋ звук" : Path.GetFileNameWithoutExtension(p));
+        }
+
+        private void PadFire(int k)
+        {
+            if (string.IsNullOrEmpty(Settings.Pads[k])) { PadAssign(k); return; }
+            PlaySfx(Settings.Pads[k]);
+        }
+
+        private void PadAssign(int k)
+        {
+            var dlg = new OpenFileDialog { Filter = AudioFilter, Title = "Звук для кнопки " + (k + 1) };
+            if (dlg.ShowDialog() != true) return;
+            Settings.Pads[k] = dlg.FileName;
+            ((Button)PadGrid.Children[k]).Content = PadLabel(k);
+        }
+
+        private void PadsStop_Click(object sender, RoutedEventArgs e) => AudioPlayer.StopAllOnce();
+
+        private void PadsClear_Click(object sender, RoutedEventArgs e)
+        {
+            for (int i = 0; i < Settings.Pads.Length; i++) Settings.Pads[i] = null;
+            BuildPads();
+        }
+
+        // ---------- Устройство вывода музыки и эффектов ----------
+
+        private void RefreshDevices()
+        {
+            _devices = AudioPlayer.DeviceNames();
+            int idx = -1;
+            if (!string.IsNullOrEmpty(Settings.AudioDevice))
+                idx = _devices.FindIndex(d => d == Settings.AudioDevice);
+            _devIdx = idx;
+            _mPlayer.Device = _devIdx;
+            UpdateDeviceUi();
+        }
+
+        private void UpdateDeviceUi() =>
+            DeviceBtn.Content = "🔈 " + (_devIdx < 0 ? "Устройство по умолчанию" : _devices[_devIdx]);
+
+        private void Device_Click(object sender, RoutedEventArgs e)
+        {
+            _devices = AudioPlayer.DeviceNames(); // список мог измениться: подключили колонки/HDMI
+            _devIdx++;
+            if (_devIdx >= _devices.Count) _devIdx = -1;
+            Settings.AudioDevice = _devIdx < 0 ? "" : _devices[_devIdx];
+            _mPlayer.Device = _devIdx;
+            UpdateDeviceUi();
+        }
+
+        private void WinSound_Click(object sender, RoutedEventArgs e)
+        {
+            try { Process.Start(new ProcessStartInfo("ms-settings:apps-volume") { UseShellExecute = true }); }
+            catch { try { Process.Start("sndvol.exe"); } catch { } }
         }
     }
 }

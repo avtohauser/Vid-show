@@ -10,6 +10,8 @@
     <Window.Resources>
         <DataTemplate x:Key="ItemTpl">
             <DockPanel>
+                <TextBlock Text="{Binding DurText}" DockPanel.Dock="Right" Margin="6,0,0,0" VerticalAlignment="Center"
+                           FontFamily="Consolas" FontSize="11.5" Foreground="{StaticResource MutedBrush}"/>
                 <TextBlock Text="{Binding Badge}" DockPanel.Dock="Right" Margin="6,0,0,0" VerticalAlignment="Center"
                            Foreground="{StaticResource AccentLightBrush}"/>
                 <TextBlock x:Name="Ico" Text="•" Width="20" DockPanel.Dock="Left" VerticalAlignment="Center"
@@ -29,7 +31,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="16"/>
-            <ColumnDefinition Width="290"/>
+            <ColumnDefinition Width="320"/>
         </Grid.ColumnDefinitions>
 
         <!-- ЛЕВАЯ ЧАСТЬ: пульт -->
@@ -90,6 +92,8 @@
                         MouseLeftButtonUp="Film_MouseUp" MouseLeave="Film_MouseLeave">
                     <Grid x:Name="FilmArea" Background="Transparent">
                         <UniformGrid x:Name="Tiles" Rows="1" IsHitTestVisible="False"/>
+                        <Rectangle x:Name="TrimL" Fill="#B8250A18" HorizontalAlignment="Left" Width="0" IsHitTestVisible="False"/>
+                        <Rectangle x:Name="TrimR" Fill="#B8250A18" HorizontalAlignment="Right" Width="0" IsHitTestVisible="False"/>
                         <Rectangle x:Name="FilmDim" Fill="#A6000000" HorizontalAlignment="Right" Width="0" IsHitTestVisible="False"/>
                         <Rectangle x:Name="FilmHead" Width="3" Fill="White" HorizontalAlignment="Left" IsHitTestVisible="False"
                                    RadiusX="1.5" RadiusY="1.5" Visibility="Collapsed"/>
@@ -209,15 +213,24 @@
                     </DockPanel>
                     <ListBox x:Name="PlayList" Grid.Row="1" ItemTemplate="{StaticResource ItemTpl}"
                              MouseDoubleClick="PlayList_DoubleClick" SelectionChanged="PlayList_SelectionChanged"/>
-                    <DockPanel Grid.Row="2" Margin="0,8,0,0">
-                        <ToggleButton x:Name="HoldChk" DockPanel.Dock="Right" Style="{StaticResource Chip}" Content="∞ Ждать" IsEnabled="False"
-                                      Click="Hold_Click" ToolTip="Картинка ожидания: висит на проекторе, пока вы сами не включите следующее (Пробел или N)"/>
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="▲" Padding="10,5" Margin="0,0,4,0" Click="Up_Click" ToolTip="Выше в очереди"/>
-                            <Button Content="▼" Padding="10,5" Margin="0,0,4,0" Click="Down_Click" ToolTip="Ниже в очереди"/>
-                            <Button Content="✕" Padding="10,5" Click="Remove_Click" ToolTip="Убрать из очереди (Del)"/>
-                        </StackPanel>
-                    </DockPanel>
+                    <StackPanel Grid.Row="2" Margin="0,8,0,0">
+                        <DockPanel>
+                            <ToggleButton x:Name="HoldChk" DockPanel.Dock="Right" Style="{StaticResource Chip}" Content="⏸ Ждать" IsEnabled="False"
+                                          Click="Hold_Click" ToolTip="Ждать оператора: картинка/чёрный висят, а видео после конца остаётся на последнем кадре, пока вы не включите следующее (Пробел или N)"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="▲" Padding="9,5" Margin="0,0,3,0" Click="Up_Click" ToolTip="Выше в очереди"/>
+                                <Button Content="▼" Padding="9,5" Margin="0,0,3,0" Click="Down_Click" ToolTip="Ниже в очереди"/>
+                                <Button Content="✕" Padding="9,5" Margin="0,0,3,0" Click="Remove_Click" ToolTip="Убрать из очереди (Del)"/>
+                                <Button Content="⚙" Padding="9,5" Margin="0,0,3,0" Click="Edit_Click" ToolTip="Свойства: обрезка, повторы, переходы, фанфара, музыка (E)"/>
+                                <Button Content="⬛" Padding="9,5" Click="AddBlack_Click" ToolTip="Вставить чёрный экран / паузу после выбранного"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <UniformGrid Rows="1" Margin="0,6,0,0">
+                            <Button Content="📂 Открыть" Padding="6,5" FontSize="12" Margin="0,0,3,0" Click="OpenProject_Click" ToolTip="Открыть программу из файла"/>
+                            <Button Content="💾 Сохранить" Padding="6,5" FontSize="12" Margin="3,0,3,0" Click="SaveProject_Click" ToolTip="Сохранить программу в файл"/>
+                            <Button Content="🗓 План" Padding="6,5" FontSize="12" Margin="3,0,0,0" Click="Program_Click" ToolTip="План мероприятия: все элементы по порядку, паузы, повторы, переходы (G)"/>
+                        </UniformGrid>
+                    </StackPanel>
                     <TextBlock Grid.Row="3" Margin="0,10,0,0" FontSize="11" LineHeight="17" TextWrapping="Wrap"
                                Foreground="{StaticResource MutedBrush}"
                                Text="Пробел — пуск/пауза (на картинке ожидания — включить следующее) · B — чёрный экран · F — проектор · M — звук видео · K — музыка · Ctrl+↑/↓ — громкость музыки · L — повтор · ←/→ — ±5 с (Shift — ±30 с) · N/P — следующее/предыдущее · Del — убрать · Esc — скрыть проектор"/>
@@ -228,6 +241,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -285,6 +299,29 @@
                             <Button Content="⤵ Плавно выкл" Padding="8,5" FontSize="12" Margin="3,0,0,0" Click="MusicFadeOut_Click"
                                     ToolTip="Музыка плавно затихает и ставится на паузу (3 с)"/>
                         </UniformGrid>
+                        <DockPanel Margin="0,8,0,0">
+                            <Button DockPanel.Dock="Right" Content="⚙" Padding="9,5" Margin="4,0,0,0" Click="WinSound_Click"
+                                    ToolTip="Звук Windows: выбрать устройство для звука видео (Параметры → Громкость → приложение)"/>
+                            <Button x:Name="DeviceBtn" Content="🔈 Устройство по умолчанию" Padding="9,5" FontSize="12" Click="Device_Click"
+                                    ToolTip="Куда выводить музыку и фанфары. Нажимайте, чтобы переключать устройства. Звук видео идёт на устройство Windows по умолчанию (кнопка ⚙)"/>
+                        </DockPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="6" Margin="0,10,0,0">
+                        <DockPanel Margin="0,0,0,4">
+                            <Button DockPanel.Dock="Right" Content="Стоп" Padding="8,3" FontSize="11" Margin="3,0,0,0" Click="PadsStop_Click"
+                                    ToolTip="Остановить все играющие эффекты"/>
+                            <Button DockPanel.Dock="Right" Content="Сброс" Padding="8,3" FontSize="11" Click="PadsClear_Click"
+                                    ToolTip="Очистить все кнопки"/>
+                            <TextBlock Text="ФАНФАРЫ И ЭФФЕКТЫ" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                                       VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <UniformGrid x:Name="PadGrid" Columns="3"/>
+                        <DockPanel Margin="0,6,0,0">
+                            <TextBlock DockPanel.Dock="Left" Text="🎺" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <Slider x:Name="SfxVol" Minimum="0" Maximum="1" Value="0.9" IsMoveToPointEnabled="True"
+                                    ValueChanged="SfxVol_ValueChanged" ToolTip="Громкость эффектов"/>
+                        </DockPanel>
                     </StackPanel>
                 </Grid>
             </Grid>
