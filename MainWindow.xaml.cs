@@ -561,12 +561,6 @@ namespace VidShow
             RefreshLayers();
         }
 
-        private bool HasNext()
-        {
-            int i = _act == null ? -1 : _items.IndexOf(_act.Item);
-            return i >= 0 && i + 1 < _items.Count;
-        }
-
         // ---------- Переключение элементов ----------
 
         // Включает элемент очереди. Если что-то уже идёт и переход включён — плавно проявляет новое поверх.
